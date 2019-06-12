@@ -49,16 +49,21 @@ public class MainActivity extends AppCompatActivity {
         rcAdapter.setItemClickListener(new RCAdapter.ItemClickListenr() {
             @Override
             public void onClick(View view, int positon) {
-                Log.d(TAG, "onClick: positon");
+
                 if (bluetoothAdapter != null) {
+                    Log.d(TAG, "onClick: positon="+positon+" address="+ deviceList.get(positon).getAddress()+" name="+deviceList.get(positon).getName());
                     bluetoothAdapter.cancelDiscovery();//配对设备之前停止寻找设备
                     deviceList.get(positon).createBond();//配对设备,如何监听配对的结果？？
                 }
 
             }
         });
-
-
+//todo 1.需要注意的是,已经配对的蓝牙设备再次去配对没有反应,不会弹出要求配对的对话框
+//todo 2/已经配对的蓝牙可以直接进行通讯,前提是对方设备依旧把我们设置为匹配的状态
+//todo   3.分几种状态讨论,
+//todo  ·如果设备A之前已经和设备B配对成功,那么设备A下次连接设备B的时候,如果设备B已经手动取消了配对是什么情
+// todo   ·如果设备A之前已经和设备B配对成功,那么设备A下次连接设备B的时候,如果设备A已经手动取消了配对但是设备B没有取消设备配对
+// todo read failed, socket might closed or timeout, read ret: -1 socket调用connect的时候遇到了这个问题https://www.e-learn.cn/content/wangluowenzhang/12377
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);//.ACTION_STATE_CHANGED监听蓝牙状态，
         registerReceiver(new MyBluetoothReceiver(), intentFilter);
@@ -132,12 +137,19 @@ public class MainActivity extends AppCompatActivity {
                 String deviceHardwareAddress = device.getAddress(); // MAC address
 
                 if (deviceName != null) {
-                    Log.d(TAG, "onReceive: 11111111111111");
+                    Log.d(TAG, "onReceive: 111111111111112");
 
                     //判断是否该设备已经搜索到
                     boolean ifFindDevie = false;
+                    if(deviceList.size()==0){
+                        Log.d(TAG, "onReceive: 初次添加蓝牙设备到集合");
+                                deviceList.add(device);
+                        RCAdapter adapter = (RCAdapter) recyclerView.getAdapter();
+                        adapter.setmDatas(deviceList);
+                        adapter.notifyDataSetChanged();//刷新list
+                    }
                     for (int i = 0; i < deviceList.size(); i++) {//去重
-                        if (!deviceList.get(i).getAddress().equals(deviceHardwareAddress)) {
+                        if (deviceList.get(i).getAddress().equals(deviceHardwareAddress)) {
                             ifFindDevie = true;
                         }
                         if (i == deviceList.size() - 1 && !ifFindDevie) {//没有发现过的设备添加到list
@@ -145,7 +157,7 @@ public class MainActivity extends AppCompatActivity {
                             Log.d(TAG, "onReceive: 新设备添加到list");
                             RCAdapter adapter = (RCAdapter) recyclerView.getAdapter();
                             adapter.setmDatas(deviceList);
-                            recyclerView.notify();//刷新list
+                            adapter.notifyDataSetChanged();
                         }
                     }
                 }
@@ -196,7 +208,7 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     BluetoothSocket bluetoothSocket = device.createRfcommSocketToServiceRecord(MY_UUID);
                     Log.d(TAG, "onReceive: 开始和魅蓝设备建立通讯,接收魅蓝的数据");
-                    new MyReadDataThread(bluetoothSocket);
+                    new MyReadDataThread(bluetoothSocket).start();
                 } catch (IOException e) {
                     Log.d(TAG, "onReceive: IOException=" + e.getMessage());
                     e.printStackTrace();
@@ -218,14 +230,26 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run() {
             super.run();
-            try {
-                bluetoothSocket.connect();//打开socketl连接,这个是耗时方法,不能在UI线程调用
-                inStream = bluetoothSocket.getInputStream();
-            } catch (IOException e) {
 
-            }
+                new Thread(){
+                    @Override
+                    public void run() {
+                        try {
+                            bluetoothSocket.connect();
+                        } catch (IOException e) {
+                            Log.d(TAG, "run: 读蓝牙数据异常11111 e="+e.getMessage());
+                            e.printStackTrace();
+                        }
+                    }
+                }.start();
+            //    inStream = bluetoothSocket.getInputStream();
+
+//            catch (IOException e) {
+//                Log.d(TAG, "run: 读蓝牙数据异常11111 e="+e.getMessage());
+  //          }
             while (true) {
                 if (inStream == null) {
+                    Log.d(TAG, "run: return!!!!!!!!");
                     return;
                 }
                 byte[] buff = new byte[1024];
@@ -234,7 +258,7 @@ public class MainActivity extends AppCompatActivity {
                     Log.d(TAG, "run: !!!!!!!!开始读数据!!!!!!!!!!");
                     //       processBuffer(buff,1024);
                 } catch (IOException e) {
-
+                    Log.d(TAG, "run:读蓝牙数据异常 e="+e.getMessage());
                     e.printStackTrace();
                 }
             }
