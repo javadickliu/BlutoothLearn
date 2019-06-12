@@ -20,6 +20,15 @@ import java.util.Map;
 public class RCAdapter extends RecyclerView.Adapter<RCAdapter.VH> {
     private static final String TAG = "RCAdapter";
     private List<BluetoothDevice> mDatas;
+    private ItemClickListenr listenr;
+
+    public List<BluetoothDevice> getmDatas() {
+        return mDatas;
+    }
+
+    public void setmDatas(List<BluetoothDevice> mDatas) {
+        this.mDatas = mDatas;
+    }
 
     public RCAdapter(List<BluetoothDevice> data) {
         this.mDatas = data;
@@ -34,12 +43,7 @@ public class RCAdapter extends RecyclerView.Adapter<RCAdapter.VH> {
     @Override
     public void onBindViewHolder(VH holder, int position) {
         holder.title.setText(mDatas.get(position).getName());
-        holder.itemView.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Log.d(TAG, "onClick: ");
-            }
-        });
+        holder.title.setTag(position);
     }
 
     @Override
@@ -47,13 +51,34 @@ public class RCAdapter extends RecyclerView.Adapter<RCAdapter.VH> {
         return mDatas.size();
     }
 
+    public void setItemClickListener(ItemClickListenr listener) {//定义方法传递监听对象
+        this.listenr = listener;
+    }
 
-    public static class VH extends RecyclerView.ViewHolder {
+    public interface ItemClickListenr {//监听接口
+
+        public void onClick(View view, int positon);
+    }
+
+
+    public class VH extends RecyclerView.ViewHolder {
         public final TextView title;
 
         public VH(View v) {
             super(v);
             title = (TextView) v.findViewById(R.id.mainactivity_recyclerview_item_bluetooth_name);
+            title.setOnClickListener(new MyViewClickListener());
         }
     }
+
+    private class MyViewClickListener implements View.OnClickListener {
+
+        @Override
+        public void onClick(View v) {
+            if (listenr != null) {
+                listenr.onClick(v, (int) v.getTag());//通知监听者
+            }
+        }
+    }
+
 }

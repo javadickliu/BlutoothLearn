@@ -15,6 +15,7 @@ import android.support.v7.widget.DividerItemDecoration;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.util.Log;
+import android.view.View;
 import android.view.ViewGroup;
 
 import com.bnv.liudongxun.bluetoothdemo.adapter.RCAdapter;
@@ -35,14 +36,28 @@ public class MainActivity extends AppCompatActivity {
     private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");//蓝牙串口的通用UUID,UUID是什么东西
     private List<BluetoothDevice> deviceList = new ArrayList<>();
     private RecyclerView recyclerView;//显示蓝牙设备
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         recyclerView = (RecyclerView) findViewById(R.id.mainactivity_recyclerview);
-        recyclerView.setAdapter(new RCAdapter(deviceList));
+        RCAdapter rcAdapter = new RCAdapter(deviceList);
+        recyclerView.setAdapter(rcAdapter);
         recyclerView.setLayoutManager(new LinearLayoutManager(MainActivity.this));
         recyclerView.addItemDecoration(new DividerItemDecoration(MainActivity.this, DividerItemDecoration.VERTICAL));
+        rcAdapter.setItemClickListener(new RCAdapter.ItemClickListenr() {
+            @Override
+            public void onClick(View view, int positon) {
+                Log.d(TAG, "onClick: positon");
+                if (bluetoothAdapter != null) {
+                    bluetoothAdapter.cancelDiscovery();//配对设备之前停止寻找设备
+                    deviceList.get(positon).createBond();//配对设备,如何监听配对的结果？？
+                }
+
+            }
+        });
+
 
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);//.ACTION_STATE_CHANGED监听蓝牙状态，
@@ -51,6 +66,10 @@ public class MainActivity extends AppCompatActivity {
         IntentFilter intentFilter1 = new IntentFilter();
         intentFilter1.addAction(BluetoothDevice.ACTION_FOUND);//BluetoothDevice.ACTION_FOUND  注意这个action所属的类
         registerReceiver(new MyBluetoothDiscoveryReceiver(), intentFilter1);
+
+        IntentFilter intentFilter2 = new IntentFilter();
+        intentFilter2.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
+        registerReceiver(new MyBluetoothMatchReceiver(), intentFilter2);
 
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter != null) {
@@ -70,7 +89,7 @@ public class MainActivity extends AppCompatActivity {
                 //调用startDiscovery寻找设备比较占用蓝牙资源 不需要的时候及时调用cacelDiscovery()停止搜索蓝牙设备
                 if (ifStartDiscovery) {
                     Log.d(TAG, "onCreate: 开始寻找周围的蓝牙设备");
-                }else {
+                } else {
                     Log.d(TAG, "onCreate: 开始寻找蓝牙设备失败");
                 }
 
@@ -112,59 +131,29 @@ public class MainActivity extends AppCompatActivity {
                 String deviceName = device.getName();//名字返回null,表示发生了问题  这种设备一般过滤掉
                 String deviceHardwareAddress = device.getAddress(); // MAC address
 
-                if (deviceName != null && deviceName.equals("魅蓝")) {
+                if (deviceName != null) {
                     Log.d(TAG, "onReceive: 11111111111111");
-//                    try {
-//                        device.createBond();//建立连接?????????
-//                        BluetoothSocket bluetoothSocket = device.createRfcommSocketToServiceRecord(MY_UUID);
-//                        bluetoothAdapter.cancelDiscovery();//发现是个耗时需要及时取消
-//                        //     bluetoothSocket.connect();//打开socketl连接,这个是耗时方法,不能在UI线程调用
-//                        Log.d(TAG, "onReceive: 开始和魅蓝设备建立通讯,接收魅蓝的数据");
-//                        new MyReadDataThread(bluetoothSocket);
-//                    } catch (IOException e) {
-//                        Log.d(TAG, "onReceive: IOException=" + e.getMessage());
-//                        e.printStackTrace();
-//                    }
+
+                    //判断是否该设备已经搜索到
+                    boolean ifFindDevie = false;
+                    for (int i = 0; i < deviceList.size(); i++) {//去重
+                        if (!deviceList.get(i).getAddress().equals(deviceHardwareAddress)) {
+                            ifFindDevie = true;
+                        }
+                        if (i == deviceList.size() - 1 && !ifFindDevie) {//没有发现过的设备添加到list
+                            deviceList.add(device);
+                            Log.d(TAG, "onReceive: 新设备添加到list");
+                            RCAdapter adapter = (RCAdapter) recyclerView.getAdapter();
+                            adapter.setmDatas(deviceList);
+                            recyclerView.notify();//刷新list
+                        }
+                    }
                 }
                 Log.d(TAG, "onReceive: 获取到附近蓝牙设备的结果 deviceName=" + deviceName + " deviceHardwareAddress=" + deviceHardwareAddress);
             }
         }
     }
 
-
-    private class MyReadDataThread extends Thread {
-        private BluetoothSocket bluetoothSocket;
-        private InputStream inStream;
-
-        MyReadDataThread(BluetoothSocket socket) {
-            bluetoothSocket = socket;
-        }
-
-        @Override
-        public void run() {
-            super.run();
-            try {
-                bluetoothSocket.connect();
-                inStream = bluetoothSocket.getInputStream();
-            } catch (IOException e) {
-
-            }
-            while (true) {
-                if (inStream == null) {
-                    return;
-                }
-                byte[] buff = new byte[1024];
-                try {
-                    inStream.read(buff); //读取数据存储在buff数组中
-                    Log.d(TAG, "run: ");
-                    //       processBuffer(buff,1024);
-                } catch (IOException e) {
-
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
 
     /**
      * 广播接收蓝牙的状态
@@ -186,4 +175,71 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
+
+    /**
+     * 广播接收蓝牙设备配对的状态
+     */
+    private class MyBluetoothMatchReceiver extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+//       * <p>Always contains the extra fields {@link #EXTRA_DEVICE}, {@link
+//     * #EXTRA_BOND_STATE} and {@link #EXTRA_PREVIOUS_BOND_STATE}.
+            BluetoothDevice device = (BluetoothDevice) intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+            int bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1);
+            int oldBondState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, -1);
+            if (bondState == BluetoothDevice.BOND_NONE) {
+                Log.d(TAG, "onReceive: 蓝牙设备绑定失败 name=" + device.getName());
+            } else if (bondState == BluetoothDevice.BOND_BONDED) {
+                Log.d(TAG, "onReceive: 蓝牙设备已经绑定 name=" + device.getName());
+                try {
+                    BluetoothSocket bluetoothSocket = device.createRfcommSocketToServiceRecord(MY_UUID);
+                    Log.d(TAG, "onReceive: 开始和魅蓝设备建立通讯,接收魅蓝的数据");
+                    new MyReadDataThread(bluetoothSocket);
+                } catch (IOException e) {
+                    Log.d(TAG, "onReceive: IOException=" + e.getMessage());
+                    e.printStackTrace();
+                }
+            } else if (bondState == BluetoothDevice.BOND_BONDING) {
+                Log.d(TAG, "onReceive: 蓝牙设备绑定中 name=" + device.getName());
+            }
+        }
+    }
+
+    private class MyReadDataThread extends Thread {
+        private BluetoothSocket bluetoothSocket;
+        private InputStream inStream;
+
+        MyReadDataThread(BluetoothSocket socket) {
+            bluetoothSocket = socket;
+        }
+
+        @Override
+        public void run() {
+            super.run();
+            try {
+                bluetoothSocket.connect();//打开socketl连接,这个是耗时方法,不能在UI线程调用
+                inStream = bluetoothSocket.getInputStream();
+            } catch (IOException e) {
+
+            }
+            while (true) {
+                if (inStream == null) {
+                    return;
+                }
+                byte[] buff = new byte[1024];
+                try {
+                    inStream.read(buff); //读取数据存储在buff数组中
+                    Log.d(TAG, "run: !!!!!!!!开始读数据!!!!!!!!!!");
+                    //       processBuffer(buff,1024);
+                } catch (IOException e) {
+
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+
 }
