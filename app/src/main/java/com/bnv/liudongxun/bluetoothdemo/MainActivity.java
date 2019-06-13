@@ -23,6 +23,7 @@ import com.bnv.liudongxun.bluetoothdemo.bean.BToothDeviceInfo;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.MalformedInputException;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,7 +52,7 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View view, int positon) {
 
                 if (bluetoothAdapter != null) {
-                    Log.d(TAG, "onClick: positon="+positon+" address="+ deviceList.get(positon).getAddress()+" name="+deviceList.get(positon).getName());
+                    Log.d(TAG, "onClick: positon="+positon+" address1="+ deviceList.get(positon).getAddress()+" name="+deviceList.get(positon).getName());
                     bluetoothAdapter.cancelDiscovery();//配对设备之前停止寻找设备
                     deviceList.get(positon).createBond();//配对设备,如何监听配对的结果？？
                 }
@@ -60,9 +61,10 @@ public class MainActivity extends AppCompatActivity {
         });
 //todo 1.需要注意的是,已经配对的蓝牙设备再次去配对没有反应,不会弹出要求配对的对话框
 //todo 2/已经配对的蓝牙可以直接进行通讯,前提是对方设备依旧把我们设置为匹配的状态
-//todo   3.分几种状态讨论,
+//todo   3.这里可以分几种状态讨论,
 //todo  ·如果设备A之前已经和设备B配对成功,那么设备A下次连接设备B的时候,如果设备B已经手动取消了配对是什么情
 // todo   ·如果设备A之前已经和设备B配对成功,那么设备A下次连接设备B的时候,如果设备A已经手动取消了配对但是设备B没有取消设备配对
+//         ·已经配对成功的设备 bluetoothAdapter.startDiscovery()找不到设备了
 // todo read failed, socket might closed or timeout, read ret: -1 socket调用connect的时候遇到了这个问题https://www.e-learn.cn/content/wangluowenzhang/12377
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);//.ACTION_STATE_CHANGED监听蓝牙状态，
@@ -205,12 +207,17 @@ public class MainActivity extends AppCompatActivity {
                 Log.d(TAG, "onReceive: 蓝牙设备绑定失败 name=" + device.getName());
             } else if (bondState == BluetoothDevice.BOND_BONDED) {
                 Log.d(TAG, "onReceive: 蓝牙设备已经绑定 name=" + device.getName());
+                //        BluetoothSocket bluetoothSocket = device.createRfcommSocketToServiceRecord(MY_UUID);
+                BluetoothSocket bluetoothSocket;
                 try {
-                    BluetoothSocket bluetoothSocket = device.createRfcommSocketToServiceRecord(MY_UUID);
+                    bluetoothSocket =(BluetoothSocket) device.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(device,1);
                     Log.d(TAG, "onReceive: 开始和魅蓝设备建立通讯,接收魅蓝的数据");
                     new MyReadDataThread(bluetoothSocket).start();
-                } catch (IOException e) {
-                    Log.d(TAG, "onReceive: IOException=" + e.getMessage());
+                } catch (IllegalAccessException e) {
+                    e.printStackTrace();
+                } catch (InvocationTargetException e) {
+                    e.printStackTrace();
+                } catch (NoSuchMethodException e) {
                     e.printStackTrace();
                 }
             } else if (bondState == BluetoothDevice.BOND_BONDING) {
@@ -231,19 +238,31 @@ public class MainActivity extends AppCompatActivity {
         public void run() {
             super.run();
 
-                new Thread(){
-                    @Override
-                    public void run() {
-                        try {
-                            bluetoothSocket.connect();
-                        } catch (IOException e) {
-                            Log.d(TAG, "run: 读蓝牙数据异常11111 e="+e.getMessage());
-                            e.printStackTrace();
-                        }
-                    }
-                }.start();
-            //    inStream = bluetoothSocket.getInputStream();
+//                new Thread(){
+//                    @Override
+//                    public void run() {
+//                        try {
+//
+//                        } catch (IOException e) {
+//                            Log.d(TAG, "run: 读蓝牙数据异常11111 e="+e.getMessage());
+//                            e.printStackTrace();
+//                        }
+//                    }
+//                }.start();
+            try {
+                bluetoothSocket.connect();
+                inStream = bluetoothSocket.getInputStream();
+                Log.d(TAG, "run: 获取socket流正常");
+            } catch (IOException e) {
+                Log.d(TAG, "run: 获取socket流异常 e= "+e.getMessage());
+                e.printStackTrace();
+            }
 
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
 //            catch (IOException e) {
 //                Log.d(TAG, "run: 读蓝牙数据异常11111 e="+e.getMessage());
   //          }
